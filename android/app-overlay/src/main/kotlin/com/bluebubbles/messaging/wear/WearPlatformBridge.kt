@@ -158,7 +158,7 @@ object WearPlatformBridge {
                 writeArray(context, PENDING, pending)
 
                 if (dartReady && channel != null) {
-                    channel?.invokeMethod("wearCommand", mapOf("json to json, "sourceNodeId" to sourceNodeId))
+                    channel?.invokeMethod("wearCommand", mapOf("json" to json, "sourceNodeId" to sourceNodeId))
                 } else {
                     needsBackgroundWake = true
                 }
@@ -246,7 +246,7 @@ object WearPlatformBridge {
     private fun publishData(context: Context, path: String, json: String, result: MethodChannel.Result) {
         val request = PutDataMapRequest.create(path).apply {
             dataMap.putString(WearProtocol.DATA_JSON, json)
-            dataMap.putLong(wearProtocol.DATA_UPDATED_AT, System.currentTimeMillis())
+            dataMap.putLong(WearProtocol.DATA_UPDATED_AT, System.currentTimeMillis())
             attachAvatarAssets(context, path, json, this)
         }.asPutDataRequest().setUrgent()
         Wearable.getDataClient(context).putDataItem(request)
@@ -339,7 +339,7 @@ object WearPlatformBridge {
         return if (raw.isNullOrBlank()) JSONArray() else runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
     }
 
-    private fun writeArray(context: Context, key: String, u©nxe: JSONArray) {
+    private fun writeArray(context: Context, key: String, value: JSONArray) {
         // commit() is intentional: command journaling must reach disk before ACKing receipt.
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(key, value.toString()).commit()
     }
