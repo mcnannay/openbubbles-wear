@@ -1,0 +1,129 @@
+name: Integration Build
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/integration-build.yml'
+      - 'android/**'
+      - 'lib/**'
+      - 'tools/**'
+      - 'README.md'
+      - 'INTEGRATION.md'
+      - 'PROTOCOL.md'
+      - 'VALIDATION.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: OpenBubbles + Wear integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          swap-storage: true
+
+      - name: Check out Wear companion
+        uses: actions/checkout@v4
+        with:
+          path: wear-companion
+
+      - name: Check out upstream OpenBubbles
+        uses: actions/checkout@v4
+        with:
+          repository: OpenBubbles/openbubbles-app
+          ref: rustpush
+          path: openbubbles
+          submodules: recursive
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.24.0
+          cache: true
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: temurin
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install protobuf compiler
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+      - name: Set up fake FairPlay keys
+        working-directory: openbubbles
+        shell: bash
+        run: |
+          mkdir -p rustpush/certs/fairplay
+          cert_names=(
+            4056631661436364584235346952193
+            4056631661436364584235346952194
+            4056631661436364584235346952195
+            4056631661436364584235346952196
+            4056631661436364584235346952197
+            4056631661436364584235346952198
+            4056631661436364584235346952199
+            4056631661436364584235346952200
+            4056631661436364584235346952201
+            4056631661436364584235346952208
+          )
+          for name in "${cert_names[@]}"; do
+            cp rustpush/certs/legacy-fairplay/fairplay.pem "rustpush/certs/fairplay/$name.pem"
+            cp rustpush/certs/legacy-fairplay/fairplay.crt "rustpush/certs/fairplay/$name.crt"
+          done
+
+      - name: Apply Wear integration
+        run: python3 wear-companion/tools/apply_to_openbubbles.py openbubbles
+
+      - name: Validate patch
+        run: |
+          git -C openbubbles diff --check
+          git -C openbubbles status --short
+
+      - name: Resolve Flutter dependencies
+        working-directory: openbubbles
+        run: flutter pub get
+
+      - name: Build phone APK
+        working-directory: openbubbles
+        run: flutter build apk --flavor alpha --debug --target-platform android-arm64
+
+      - name: Build Wear APK
+        working-directory: openbubbles/android
+        run: ./gradlew :wear:assembleAlphaDebug --stacktrace
+
+      - name: Upload phone APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: openbubbles-alpha-debug
+          path: openbubbles/build/app/outputs/flutter-apk/app-alpha-debug.apk
+          if-no-files-found: error
+
+      - name: Upload Wear APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: openbubbles-wear-alpha-debug
+          path: openbubbles/build/wear/outputs/apk/alpha/debug/wear-alpha-debug.apk
+          if-no-files-found: error
