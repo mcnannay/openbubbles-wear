@@ -61,7 +61,7 @@ def main() -> int:
     )
     replace_once(
         settings,
-        'include ":app"\n',
+        'include ":app"',
         'include ":app"\ninclude ":wear-protocol"\ninclude ":wear"\n',
         'include ":wear-protocol"',
     )
