@@ -1,6 +1,7 @@
 package com.bluebubbles.messaging.wear
 
 import android.content.Context
+import android.util.Log
 import com.bluebubbles.messaging.wear.protocol.WearCodec
 import com.bluebubbles.messaging.wear.protocol.WearCommandDto
 import com.bluebubbles.messaging.wear.protocol.WearCommandType
@@ -58,18 +59,36 @@ class WearBridge(private val context: Context) {
 
     private fun send(command: WearCommandDto): String {
         val commandId = command.commandId ?: return ""
+        val label = commandLabel(command)
         val bytes = WearCodec.toJson(command).toByteArray(Charsets.UTF_8)
+        Log.d(TAG, "send $label")
         Wearable.getNodeClient(context).connectedNodes.addOnSuccessListener { nodes ->
             val target = nodes.firstOrNull { it.isNearby } ?: nodes.firstOrNull()
             if (target == null) {
+                Log.w(TAG, "no connected phone node for $label")
                 WearStore.setPhoneConnected(false)
                 return@addOnSuccessListener
             }
             WearStore.setPhoneConnected(true)
+            Log.d(TAG, "target selected nearby=${target.isNearby} for $label")
             Wearable.getMessageClient(context)
                 .sendMessage(target.id, WearProtocol.PATH_COMMAND, bytes)
-                .addOnFailureListener { WearStore.setPhoneConnected(false) }
-        }.addOnFailureListener { WearStore.setPhoneConnected(false) }
+                .addOnSuccessListener { Log.d(TAG, "Data Layer accepted $label") }
+                .addOnFailureListener { error ->
+                    Log.w(TAG, "Data Layer send failed for $label", error)
+                    WearStore.setPhoneConnected(false)
+                }
+        }.addOnFailureListener { error ->
+            Log.w(TAG, "connected-node lookup failed for $label", error)
+            WearStore.setPhoneConnected(false)
+        }
         return commandId
+    }
+
+    private fun commandLabel(command: WearCommandDto): String =
+        "type=${command.type} id=${command.commandId?.take(8) ?: "none"}"
+
+    companion object {
+        private const val TAG = "OBWearWatch"
     }
 }
