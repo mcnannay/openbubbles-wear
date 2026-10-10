@@ -115,11 +115,33 @@ jobs:
 
       - name: Build Wear APK
         working-directory: openbubbles/android
-        run: gradle :wear:assembleAlphaDebug --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :wear:assembleAlphaDebug --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/wear-build.log"
+
+      - name: Upload Wear build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wear-build-log
+          path: wear-build.log
+          if-no-files-found: ignore
 
       - name: Build phone APK
         working-directory: openbubbles
-        run: flutter build apk --flavor alpha --debug --target-platform android-arm64
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter build apk --flavor alpha --debug --target-platform android-arm64 2>&1 | tee "$GITHUB_WORKSPACE/phone-build.log"
+
+      - name: Upload phone build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phone-build-log
+          path: phone-build.log
+          if-no-files-found: ignore
 
       - name: Upload Wear APK
         uses: actions/upload-artifact@v4

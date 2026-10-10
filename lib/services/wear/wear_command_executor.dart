@@ -35,6 +35,7 @@ class WearCommandExecutor {
       detail: backendReady ? 'OpenBubbles bridge ready' : 'OpenBubbles setup is not complete',
     );
     await _publishInbox(force: true);
+    _refreshTimer?.cancel();
     _refreshTimer = Timer.periodic(_refreshInterval, (_) {
       unawaited(_refreshChangedSnapshots());
     });
