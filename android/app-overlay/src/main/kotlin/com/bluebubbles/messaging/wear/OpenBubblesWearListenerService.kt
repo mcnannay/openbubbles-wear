@@ -38,7 +38,7 @@ class OpenBubblesWearListenerService : WearableListenerService() {
             return
         }
 
-        Log.d(TAG, "command type=${command.type} id=${command.commandId.take(8)}")
+        Log.d(TAG, "command type=${command.type} id=${command.commandId?.take(8) ?: "none"}")
         val ack = WearPlatformBridge.receiveCommand(applicationContext, json, event.sourceNodeId)
         Log.d(TAG, "immediate ack status=${ack.status} id=${ack.commandId?.take(8) ?: "none"}")
         WearPlatformBridge.sendAck(this, event.sourceNodeId, ack)
