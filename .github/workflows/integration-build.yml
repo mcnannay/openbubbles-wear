@@ -101,6 +101,14 @@ jobs:
         working-directory: openbubbles
         run: flutter pub get
 
+      - name: Configure Flutter SDK for Gradle
+        shell: bash
+        run: |
+          cat > openbubbles/android/local.properties <<EOF
+          flutter.sdk=$FLUTTER_ROOT
+          sdk.dir=$ANDROID_SDK_ROOT
+          EOF
+
       - name: Build Wear APK
         working-directory: openbubbles/android
         run: gradle :wear:assembleAlphaDebug --stacktrace
