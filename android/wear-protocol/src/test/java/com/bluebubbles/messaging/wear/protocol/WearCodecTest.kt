@@ -19,4 +19,14 @@ class WearCodecTest {
         assertEquals("cmd-1", decoded.commandId)
         assertEquals("Hello", decoded.text)
     }
+
+    @Test
+    fun stableKeysAreDeterministic() {
+        assertEquals("eaeb9111b1c6744278e80397", WearProtocol.stablePathKey("chat-1"))
+        assertEquals(
+            "/openbubbles/v1/thread/eaeb9111b1c6744278e80397",
+            WearProtocol.threadPath("chat-1"),
+        )
+        assertEquals("avatar_eaeb9111b1c6744278e80397", WearProtocol.avatarAssetKey("chat-1"))
+    }
 }

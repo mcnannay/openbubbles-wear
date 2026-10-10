@@ -1,25 +1,45 @@
 package com.bluebubbles.messaging.wear
 
 import android.app.Activity
+import android.app.RemoteInput
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.weight
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.core.app.RemoteInput
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
 import androidx.wear.compose.material3.AppScaffold
@@ -28,6 +48,11 @@ import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.input.RemoteInputIntentHelper
+import com.bluebubbles.messaging.wear.protocol.WearChatDto
+import com.bluebubbles.messaging.wear.protocol.WearMessageDto
+import com.bluebubbles.messaging.wear.protocol.WearReactionDto
+import java.text.DateFormat
+import java.util.Date
 
 class MainActivity : ComponentActivity() {
     private lateinit var bridge: WearBridge
@@ -119,6 +144,7 @@ private fun InboxScreen(
     onOpenChat: (String) -> Unit,
 ) {
     val inbox by WearStore.inbox.collectAsState()
+    val avatars by WearStore.avatars.collectAsState()
     val connected by WearStore.phoneConnected.collectAsState()
     val phoneState by WearStore.state.collectAsState()
     val listState = rememberTransformingLazyColumnState()
@@ -133,12 +159,12 @@ private fun InboxScreen(
         ) {
             item {
                 Column(Modifier.fillMaxWidth()) {
-                    Text("OpenBubbles")
+                    Text("OpenBubbles", fontWeight = FontWeight.Bold)
                     Text(
                         when {
                             phoneState.backendReady -> "Phone connected"
                             connected -> "Phone connected · bridge starting"
-                            else -> "Phone unavailable · showing cached chats"
+                            else -> "Phone unavailable · cached chats"
                         }
                     )
                 }
@@ -151,22 +177,46 @@ private fun InboxScreen(
                 val chatId = chat.id
                 if (chatId != null) {
                     Button(
-                    onClick = { onOpenChat(chatId) },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = {
-                        Column {
-                            val unread = if (chat.unreadCount > 0) " • unread" else ""
-                            Text(
-                                text = (chat.displayName ?: "Conversation") + unread,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            val preview = chat.lastMessagePreview ?: chat.lastMessage?.text
-                            if (!preview.isNullOrBlank()) {
-                                Text(preview, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        onClick = { onOpenChat(chatId) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                ConversationAvatar(chat, avatars[chatId], 34.dp)
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            text = chat.displayName ?: "Conversation",
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            fontWeight = if (chat.unreadCount > 0) FontWeight.Bold else FontWeight.Normal,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        chat.lastMessageTimestampMs?.let { timestamp ->
+                                            Text(formatTimestamp(timestamp))
+                                        }
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (chat.unreadCount > 0) {
+                                            Text("● ", fontWeight = FontWeight.Bold)
+                                        }
+                                        val preview = chat.lastMessagePreview ?: chat.lastMessage?.text
+                                        Text(
+                                            text = preview?.takeIf { it.isNotBlank() } ?: "No messages yet",
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
                             }
-                        }
-                    },
+                        },
                     )
                 }
             }
@@ -190,15 +240,15 @@ private fun ThreadScreen(
 ) {
     val threads by WearStore.threads.collectAsState()
     val outbox by WearStore.outbox.collectAsState()
+    val avatars by WearStore.avatars.collectAsState()
     val connected by WearStore.phoneConnected.collectAsState()
     val thread = threads[chatId]
     val chat = thread?.chat ?: WearStore.inbox.value.chats.firstOrNull { it.id == chatId }
-    // Observing outbox ensures optimistic/ACK updates recompose displayMessages().
-    @Suppress("UNUSED_VARIABLE") val outboxVersion = outbox.size to outbox.sumOf { it.status.hashCode() }
     val messages = WearStore.displayMessages(chatId)
     val listState = rememberTransformingLazyColumnState()
 
     LaunchedEffect(chatId) {
+        WearStore.markChatRead(chatId)
         bridge.requestThread(chatId)
         bridge.markRead(chatId)
     }
@@ -216,44 +266,39 @@ private fun ThreadScreen(
                 Button(
                     onClick = onBack,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("‹ ${chat?.displayName ?: "Chats"}") },
+                    label = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            ConversationAvatar(chat, avatars[chatId], 30.dp)
+                            Spacer(Modifier.width(7.dp))
+                            Column {
+                                Text(
+                                    text = chat?.displayName ?: "Chats",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(if (connected) "Connected" else "Offline · replies will retry")
+                            }
+                        }
+                    },
                 )
-            }
-            item {
-                Text(if (connected) "Connected" else "Offline · replies will retry")
             }
             if (messages.isEmpty()) {
                 item { Text("Loading conversation…") }
             }
             items(count = messages.size) { index ->
                 val message = messages[index]
-                val prefix = if (message.isFromMe) "You" else (message.sender ?: "Them")
-                val reactionText = message.reactions
-                    .mapNotNull { it.emoji ?: it.type }
-                    .joinToString(" ")
-                val body = when {
-                    message.isDeleted -> "Unsent message"
-                    !message.text.isNullOrBlank() -> message.text!!
-                    message.attachments.isNotEmpty() -> "Attachment"
-                    else -> "Message"
+                val outboxEntry = message.clientCommandId?.let { commandId ->
+                    outbox.firstOrNull { it.command.commandId == commandId }
                 }
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 3.dp),
-                ) {
-                    Text("$prefix: $body")
-                    if (reactionText.isNotBlank()) Text(reactionText)
-                    if (message.isFromMe && !message.status.isNullOrBlank()) Text(message.status!!)
-                    val commandId = message.clientCommandId
-                    if (message.status == "failed" && commandId != null) {
-                        Button(
-                            onClick = { bridge.retryFailed(commandId) },
-                            modifier = Modifier.fillMaxWidth(),
-                            label = { Text("Retry") },
-                        )
-                    }
-                }
+                MessageBubble(
+                    message = message,
+                    showSender = chat?.isGroup == true && !message.isFromMe,
+                    errorMessage = outboxEntry?.errorMessage,
+                    onRetry = message.clientCommandId?.takeIf { message.status == "failed" }?.let { commandId ->
+                        { bridge.retryFailed(commandId) }
+                    },
+                )
             }
             item {
                 Button(
@@ -272,3 +317,141 @@ private fun ThreadScreen(
         }
     }
 }
+
+@Composable
+private fun MessageBubble(
+    message: WearMessageDto,
+    showSender: Boolean,
+    errorMessage: String?,
+    onRetry: (() -> Unit)?,
+) {
+    val bubbleColor = if (message.isFromMe) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.secondaryContainer
+    }
+    val body = listOfNotNull(
+        message.subject?.takeIf { it.isNotBlank() },
+        message.text?.takeIf { it.isNotBlank() },
+    ).joinToString("\n").ifBlank {
+        when {
+            message.isDeleted -> "Unsent message"
+            message.attachments.isNotEmpty() -> "Attachment"
+            else -> "Message"
+        }
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (message.isFromMe) Arrangement.End else Arrangement.Start,
+    ) {
+        Column(
+            modifier = Modifier
+                .widthIn(max = 158.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(bubbleColor)
+                .padding(horizontal = 9.dp, vertical = 7.dp),
+        ) {
+            if (showSender && !message.sender.isNullOrBlank()) {
+                Text(message.sender!!, fontWeight = FontWeight.Bold)
+            }
+            Text(body)
+            if (message.reactions.isNotEmpty()) {
+                Text(message.reactions.joinToString("  ") { reactionLabel(it) })
+            }
+            val timestamp = message.timestampMs
+            val status = if (message.isFromMe) statusLabel(message.status) else null
+            val footer = listOfNotNull(
+                timestamp?.let(::formatTimestamp),
+                status,
+            ).joinToString(" · ")
+            if (footer.isNotBlank()) Text(footer)
+            if (message.status == "failed" && !errorMessage.isNullOrBlank()) {
+                Text(errorMessage, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            if (onRetry != null) {
+                Button(
+                    onClick = onRetry,
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Retry") },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConversationAvatar(chat: WearChatDto?, bytes: ByteArray?, size: Dp) {
+    val image = remember(bytes) {
+        bytes?.let { raw ->
+            runCatching {
+                BitmapFactory.decodeByteArray(raw, 0, raw.size)?.asImageBitmap()
+            }.getOrNull()
+        }
+    }
+
+    if (image != null) {
+        Image(
+            bitmap = image,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape),
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.secondaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(avatarInitials(chat), fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+private fun avatarInitials(chat: WearChatDto?): String {
+    val name = chat?.displayName?.trim().orEmpty()
+    val fromName = name.split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+        .take(2)
+        .mapNotNull { it.firstOrNull()?.uppercaseChar() }
+        .joinToString("")
+    if (fromName.isNotBlank()) return fromName
+
+    return chat?.participants
+        ?.firstOrNull()
+        ?.displayName
+        ?.trim()
+        ?.firstOrNull()
+        ?.uppercaseChar()
+        ?.toString()
+        ?: "?"
+}
+
+private fun statusLabel(status: String?): String? = when (status) {
+    "pending" -> "Sending…"
+    "sent" -> "Sent"
+    "delivered" -> "Delivered"
+    "read" -> "Read"
+    "failed" -> "Not delivered"
+    else -> null
+}
+
+private fun reactionLabel(reaction: WearReactionDto): String {
+    reaction.emoji?.takeIf { it.isNotBlank() }?.let { return it }
+    return when (reaction.type?.lowercase()) {
+        "love", "heart", "2000" -> "❤️"
+        "like", "thumbsup", "2001" -> "👍"
+        "dislike", "thumbsdown", "2002" -> "👎"
+        "laugh", "haha", "2003" -> "😂"
+        "emphasize", "!!", "2004" -> "‼️"
+        "question", "?", "2005" -> "❓"
+        else -> reaction.type?.takeIf { it.isNotBlank() } ?: "•"
+    }
+}
+
+private fun formatTimestamp(timestampMs: Long): String =
+    DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(timestampMs))

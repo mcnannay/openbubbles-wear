@@ -2,11 +2,13 @@ package com.bluebubbles.messaging.wear
 
 import com.bluebubbles.messaging.wear.protocol.WearCodec
 import com.bluebubbles.messaging.wear.protocol.WearProtocol
+import com.google.android.gms.wearable.Asset
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Node
+import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
 
 class WearDataService : WearableListenerService() {
@@ -20,12 +22,23 @@ class WearDataService : WearableListenerService() {
         events.forEach { event ->
             if (event.type != DataEvent.TYPE_CHANGED) return@forEach
             val path = event.dataItem.uri.path ?: return@forEach
-            val json = DataMapItem.fromDataItem(event.dataItem).dataMap.getString(WearProtocol.DATA_JSON) ?: return@forEach
+            val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
+            val json = dataMap.getString(WearProtocol.DATA_JSON) ?: return@forEach
             when {
-                path == WearProtocol.PATH_INBOX ->
-                    runCatching { WearCodec.inboxFromJson(json) }.getOrNull()?.let(WearStore::setInbox)
-                path.startsWith(WearProtocol.PATH_THREAD_PREFIX) ->
-                    runCatching { WearCodec.threadFromJson(json) }.getOrNull()?.let(WearStore::setThread)
+                path == WearProtocol.PATH_INBOX -> {
+                    val inbox = runCatching { WearCodec.inboxFromJson(json) }.getOrNull() ?: return@forEach
+                    WearStore.setInbox(inbox)
+                    for (chat in inbox.chats) {
+                        val chatId = chat.id ?: continue
+                        loadAvatar(chatId, dataMap.getAsset(WearProtocol.avatarAssetKey(chatId)))
+                    }
+                }
+                path.startsWith(WearProtocol.PATH_THREAD_PREFIX) -> {
+                    val thread = runCatching { WearCodec.threadFromJson(json) }.getOrNull() ?: return@forEach
+                    WearStore.setThread(thread)
+                    val chatId = thread.chat?.id ?: return@forEach
+                    loadAvatar(chatId, dataMap.getAsset(WearProtocol.avatarAssetKey(chatId)))
+                }
                 path == WearProtocol.PATH_STATE ->
                     runCatching { WearCodec.stateFromJson(json) }.getOrNull()?.let(WearStore::setState)
             }
@@ -54,5 +67,15 @@ class WearDataService : WearableListenerService() {
     override fun onPeerDisconnected(peer: Node) {
         super.onPeerDisconnected(peer)
         WearStore.setPhoneConnected(false)
+    }
+
+    private fun loadAvatar(chatId: String, asset: Asset?) {
+        if (asset == null) return
+        Wearable.getDataClient(applicationContext)
+            .getFdForAsset(asset)
+            .addOnSuccessListener { result ->
+                val bytes = result.inputStream?.use { it.readBytes() } ?: return@addOnSuccessListener
+                if (bytes.isNotEmpty()) WearStore.setAvatar(chatId, bytes)
+            }
     }
 }

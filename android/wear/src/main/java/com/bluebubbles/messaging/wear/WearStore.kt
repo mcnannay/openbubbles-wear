@@ -20,6 +20,9 @@ object WearStore {
     private val _threads = MutableStateFlow<Map<String, WearThreadDto>>(emptyMap())
     val threads: StateFlow<Map<String, WearThreadDto>> = _threads
 
+    private val _avatars = MutableStateFlow<Map<String, ByteArray>>(emptyMap())
+    val avatars: StateFlow<Map<String, ByteArray>> = _avatars
+
     private val _state = MutableStateFlow(WearStateDto())
     val state: StateFlow<WearStateDto> = _state
 
@@ -36,6 +39,14 @@ object WearStore {
             _inbox.value = it.loadInbox()
             _threads.value = it.loadThreads()
             _outbox.value = it.loadOutbox()
+
+            val ids = buildSet {
+                _inbox.value.chats.mapNotNullTo(this) { chat -> chat.id }
+                addAll(_threads.value.keys)
+            }
+            val cachedAvatars = linkedMapOf<String, ByteArray>()
+            ids.forEach { chatId -> it.loadAvatar(chatId)?.let { bytes -> cachedAvatars[chatId] = bytes } }
+            _avatars.value = cachedAvatars
         }
     }
 
@@ -44,6 +55,7 @@ object WearStore {
     fun setInbox(value: WearInboxDto) {
         _inbox.value = value.copy(chats = value.chats.take(30))
         cache?.saveInbox(_inbox.value)
+        pruneAvatarCache()
     }
 
     fun setState(value: WearStateDto) { _state.value = value }
@@ -53,9 +65,39 @@ object WearStore {
         val bounded = value.copy(messages = value.messages.takeLast(50))
         val map = _threads.value.toMutableMap()
         map[chatId] = bounded
-        _threads.value = map
+        _threads.value = map.entries
+            .sortedByDescending { it.value.generatedAtMs }
+            .take(30)
+            .associateTo(linkedMapOf()) { it.key to it.value }
         cache?.saveThread(bounded)
         reconcileOutbox(chatId, bounded)
+        pruneAvatarCache()
+    }
+
+    fun setAvatar(chatId: String, bytes: ByteArray) {
+        if (bytes.isEmpty()) return
+        val map = _avatars.value.toMutableMap()
+        map[chatId] = bytes
+        _avatars.value = map
+        cache?.saveAvatar(chatId, bytes)
+    }
+
+
+    fun markChatRead(chatId: String) {
+        val inboxChats = _inbox.value.chats.map { chat ->
+            if (chat.id == chatId && chat.unreadCount != 0) chat.copy(unreadCount = 0) else chat
+        }
+        _inbox.value = _inbox.value.copy(chats = inboxChats)
+        cache?.saveInbox(_inbox.value)
+
+        val existingThread = _threads.value[chatId] ?: return
+        val chat = existingThread.chat ?: return
+        if (chat.unreadCount == 0) return
+        val updated = existingThread.copy(chat = chat.copy(unreadCount = 0))
+        val map = _threads.value.toMutableMap()
+        map[chatId] = updated
+        _threads.value = map
+        cache?.saveThread(updated)
     }
 
     fun addOutgoing(command: WearCommandDto) {
@@ -151,5 +193,14 @@ object WearStore {
             }
         }
         if (changed) _outbox.value = cache?.loadOutbox() ?: _outbox.value
+    }
+
+    private fun pruneAvatarCache() {
+        val keepIds = buildSet {
+            _inbox.value.chats.mapNotNullTo(this) { chat -> chat.id }
+            addAll(_threads.value.keys)
+        }
+        cache?.pruneAvatars(keepIds)
+        _avatars.value = _avatars.value.filterKeys { it in keepIds }
     }
 }

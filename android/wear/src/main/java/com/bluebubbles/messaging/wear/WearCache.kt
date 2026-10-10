@@ -4,9 +4,11 @@ import android.content.Context
 import com.bluebubbles.messaging.wear.protocol.WearCodec
 import com.bluebubbles.messaging.wear.protocol.WearCommandDto
 import com.bluebubbles.messaging.wear.protocol.WearInboxDto
+import com.bluebubbles.messaging.wear.protocol.WearProtocol
 import com.bluebubbles.messaging.wear.protocol.WearThreadDto
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 data class WearOutboxEntry(
     val command: WearCommandDto,
@@ -15,9 +17,10 @@ data class WearOutboxEntry(
     val errorMessage: String? = null,
 )
 
-/** Small bounded watch-side cache. Keeps the latest inbox, 30 thread snapshots, and outbox. */
+/** Small bounded watch-side cache. Keeps the latest inbox, 30 thread snapshots, avatars, and outbox. */
 class WearCache(context: Context) {
     private val prefs = context.getSharedPreferences("openbubbles_wear_cache", Context.MODE_PRIVATE)
+    private val avatarDir = File(context.filesDir, "wear_avatars").apply { mkdirs() }
 
     fun loadInbox(): WearInboxDto = prefs.getString("inbox", null)
         ?.let { runCatching { WearCodec.inboxFromJson(it) }.getOrNull() }
@@ -65,6 +68,22 @@ class WearCache(context: Context) {
             .apply()
     }
 
+    fun saveAvatar(chatId: String, bytes: ByteArray) {
+        if (bytes.isEmpty()) return
+        runCatching { avatarFile(chatId).writeBytes(bytes) }
+    }
+
+    fun loadAvatar(chatId: String): ByteArray? = runCatching {
+        avatarFile(chatId).takeIf { it.isFile }?.readBytes()
+    }.getOrNull()
+
+    fun pruneAvatars(keepChatIds: Set<String>) {
+        val keepFiles = keepChatIds.map { avatarFile(it).name }.toSet()
+        avatarDir.listFiles()?.forEach { file ->
+            if (file.name !in keepFiles) runCatching { file.delete() }
+        }
+    }
+
     fun loadOutbox(): List<WearOutboxEntry> {
         val array = runCatching { JSONArray(prefs.getString("outbox", "[]") ?: "[]") }.getOrDefault(JSONArray())
         val result = mutableListOf<WearOutboxEntry>()
@@ -92,6 +111,9 @@ class WearCache(context: Context) {
     fun removeOutbox(commandId: String) {
         saveOutbox(loadOutbox().filterNot { it.command.commandId == commandId })
     }
+
+    private fun avatarFile(chatId: String): File =
+        File(avatarDir, "${WearProtocol.stablePathKey(chatId)}.img")
 
     private fun saveOutbox(entries: List<WearOutboxEntry>) {
         val array = JSONArray()

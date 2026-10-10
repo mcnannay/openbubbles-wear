@@ -1,19 +1,23 @@
 package com.bluebubbles.messaging.wear
 
 import android.content.Context
-import android.util.Base64
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.ThumbnailUtils
+import android.net.Uri
 import com.bluebubbles.messaging.wear.protocol.WearAckDto
 import com.bluebubbles.messaging.wear.protocol.WearAckStatus
 import com.bluebubbles.messaging.wear.protocol.WearCodec
 import com.bluebubbles.messaging.wear.protocol.WearProtocol
 import com.bluebubbles.messaging.services.backend_ui_interop.DartWorkManager
+import com.google.android.gms.wearable.Asset
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
 import org.json.JSONObject
-import java.security.MessageDigest
+import java.io.ByteArrayOutputStream
 
 /**
  * Native half of the Flutter <-> Wear Data Layer bridge.
@@ -30,6 +34,7 @@ object WearPlatformBridge {
     private const val COMPLETED = "completed_commands_v2"
     private const val MAX_COMPLETED = 200
     private const val RECOVERY_MS = 6 * 60 * 1000L
+    private const val AVATAR_SIZE_PX = 96
 
     private val lock = Any()
 
@@ -65,7 +70,7 @@ object WearPlatformBridge {
                             ?: return@setMethodCallHandler result.error("BAD_ARGS", "chatId missing", null)
                         val json = call.argument<String>("json")
                             ?: return@setMethodCallHandler result.error("BAD_ARGS", "json missing", null)
-                        publishData(context, WearProtocol.PATH_THREAD_PREFIX + stablePathKey(chatId), json, result)
+                        publishData(context, WearProtocol.threadPath(chatId), json, result)
                     }
                     "publishState" -> {
                         val json = call.argument<String>("json")
@@ -153,7 +158,7 @@ object WearPlatformBridge {
                 writeArray(context, PENDING, pending)
 
                 if (dartReady && channel != null) {
-                    channel?.invokeMethod("wearCommand", mapOf("json" to json, "sourceNodeId" to sourceNodeId))
+                    channel?.invokeMethod("wearCommand", mapOf("json to json, "sourceNodeId" to sourceNodeId))
                 } else {
                     needsBackgroundWake = true
                 }
@@ -241,12 +246,60 @@ object WearPlatformBridge {
     private fun publishData(context: Context, path: String, json: String, result: MethodChannel.Result) {
         val request = PutDataMapRequest.create(path).apply {
             dataMap.putString(WearProtocol.DATA_JSON, json)
-            dataMap.putLong(WearProtocol.DATA_UPDATED_AT, System.currentTimeMillis())
+            dataMap.putLong(wearProtocol.DATA_UPDATED_AT, System.currentTimeMillis())
+            attachAvatarAssets(context, path, json, this)
         }.asPutDataRequest().setUrgent()
         Wearable.getDataClient(context).putDataItem(request)
             .addOnSuccessListener { result.success(true) }
             .addOnFailureListener { result.error("WEAR_DATA", it.message, null) }
     }
+
+    /**
+     * Avatar paths are phone-local and meaningless on the watch. Attach small, deduplicated
+     * Data Layer Assets to the same inbox/thread DataItem so the watch can cache the image.
+     */
+    private fun attachAvatarAssets(
+        context: Context,
+        path: String,
+        json: String,
+        request: PutDataMapRequest,
+    ) {
+        val chats = when {
+            path == WearProtocol.PATH_INBOX ->
+                runCatching { WearCodec.inboxFromJson(json).chats }.getOrDefault(emptyList())
+            path.startsWith(WearProtocol.PATH_THREAD_PREFIX) ->
+                listOfNotNull(runCatching { WearCodec.threadFromJson(json).chat }.getOrNull())
+            else -> emptyList()
+        }
+
+        for (chat in chats) {
+            val chatId = chat.id ?: continue
+            val source = chat.avatarKey ?: continue
+            val bytes = avatarThumbnail(context, source) ?: continue
+            request.dataMap.putAsset(WearProtocol.avatarAssetKey(chatId), Asset.createFromBytes(bytes))
+        }
+    }
+
+    private fun avatarThumbnail(context: Context, source: String): ByteArray? = runCatching {
+        val bitmap = when {
+            source.startsWith("content://") -> context.contentResolver.openInputStream(Uri.parse(source))
+                ?.use { BitmapFactory.decodeStream(it) }
+            source.startsWith("file://") -> Uri.parse(source).path?.let(BitmapFactory::decodeFile)
+            else -> BitmapFactory.decodeFile(source)
+        } ?: return@runCatching null
+
+        val thumbnail = ThumbnailUtils.extractThumbnail(
+            bitmap,
+            AVATAR_SIZE_PX,
+            AVATAR_SIZE_PX,
+            ThumbnailUtils.OPTIONS_RECYCLE_INPUT,
+        ) ?: return@runCatching null
+
+        ByteArrayOutputStream().use { output ->
+            if (!thumbnail.compress(Bitmap.CompressFormat.PNG, 100, output)) return@runCatching null
+            output.toByteArray()
+        }
+    }.getOrNull()
 
     private fun rememberCompleted(context: Context, ack: WearAckDto) {
         val completed = readArray(context, COMPLETED)
@@ -286,16 +339,8 @@ object WearPlatformBridge {
         return if (raw.isNullOrBlank()) JSONArray() else runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
     }
 
-    private fun writeArray(context: Context, key: String, value: JSONArray) {
+    private fun writeArray(context: Context, key: String, u©nxe: JSONArray) {
         // commit() is intentional: command journaling must reach disk before ACKing receipt.
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(key, value.toString()).commit()
-    }
-
-    private fun stablePathKey(input: String): String {
-        val digest = MessageDigest.getInstance("SHA-256").digest(input.toByteArray())
-        return Base64.encodeToString(
-            digest.copyOfRange(0, 12),
-            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING,
-        )
     }
 }

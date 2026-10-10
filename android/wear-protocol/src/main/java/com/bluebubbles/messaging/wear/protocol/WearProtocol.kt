@@ -1,5 +1,7 @@
 package com.bluebubbles.messaging.wear.protocol
 
+import java.security.MessageDigest
+
 object WearProtocol {
     const val VERSION = 1
     const val PREFIX = "/openbubbles/v1"
@@ -11,6 +13,23 @@ object WearProtocol {
 
     const val DATA_JSON = "json"
     const val DATA_UPDATED_AT = "updatedAt"
+    private const val DATA_AVATAR_PREFIX = "avatar_"
+    private const val HEX = "0123456789abcdef"
+
+    fun stablePathKey(input: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(input.toByteArray(Charsets.UTF_8))
+        val out = StringBuilder(24)
+        for (i in 0 until 12) {
+            val value = digest[i].toInt() and 0xff
+            out.append(HEX[value ushr 4])
+            out.append(HEX[value and 0x0f])
+        }
+        return out.toString()
+    }
+
+    fun threadPath(chatId: String): String = PATH_THREAD_PREFIX + stablePathKey(chatId)
+
+    fun avatarAssetKey(chatId: String): String = DATA_AVATAR_PREFIX + stablePathKey(chatId)
 }
 
 object WearCommandType {
