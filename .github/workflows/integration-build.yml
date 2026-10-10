@@ -24,16 +24,6 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@main
-        with:
-          tool-cache: true
-          android: false
-          dotnet: true
-          haskell: true
-          large-packages: true
-          swap-storage: true
-
       - name: Check out Wear companion
         uses: actions/checkout@v4
         with:
