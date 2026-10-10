@@ -56,6 +56,11 @@ jobs:
           distribution: temurin
           cache: gradle
 
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
       - name: Set up Android SDK
         uses: amyu/setup-android@v5
 
@@ -98,7 +103,7 @@ jobs:
 
       - name: Build Wear APK
         working-directory: openbubbles/android
-        run: ./gradlew :wear:assembleAlphaDebug --stacktrace
+        run: gradle :wear:assembleAlphaDebug --stacktrace
 
       - name: Build phone APK
         working-directory: openbubbles
