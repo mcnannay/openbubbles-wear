@@ -1,0 +1,73 @@
+plugins {
+    id "com.android.application"
+    id "org.jetbrains.kotlin.android"
+    id "org.jetbrains.kotlin.plugin.compose"
+}
+
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('key.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+android {
+    namespace "com.bluebubbles.messaging.wear"
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "com.bluebubbles.messaging"
+        minSdk 30
+        targetSdk 36
+        versionCode 20004000
+        versionName "0.4.0"
+    }
+
+    signingConfigs {
+        release {
+            keyAlias keystoreProperties['keyAlias']
+            keyPassword keystoreProperties['keyPassword']
+            storeFile keystoreProperties['storeFile'] ? file(keystoreProperties['storeFile']) : null
+            storePassword keystoreProperties['storePassword']
+        }
+        debug { }
+    }
+
+    flavorDimensions = ["app"]
+    productFlavors {
+        joel { dimension "app"; applicationId "com.bluebubbles.messaging.joel" }
+        tanay { dimension "app"; applicationId "com.bluebubbles.messaging.tanay" }
+        alpha { dimension "app"; applicationId "com.bluebubbles.messaging.alpha" }
+        beta { dimension "app"; applicationId "com.bluebubbles.messaging.beta" }
+        prod { getIsDefault().set(true); dimension "app"; applicationId "com.openbubbles.messaging" }
+    }
+
+    buildTypes {
+        release {
+            productFlavors.joel.signingConfig signingConfigs.debug
+            productFlavors.tanay.signingConfig signingConfigs.debug
+            productFlavors.alpha.signingConfig signingConfigs.release
+            productFlavors.beta.signingConfig signingConfigs.release
+            productFlavors.prod.signingConfig signingConfigs.release
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+
+    buildFeatures { compose true }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+    kotlinOptions { jvmTarget = "21" }
+}
+
+dependencies {
+    implementation project(":wear-protocol")
+    implementation "androidx.activity:activity-compose:1.9.1"
+    implementation "androidx.wear.compose:compose-material3:1.7.1"
+    implementation "androidx.wear.compose:compose-foundation:1.7.1"
+    implementation "androidx.wear:wear-input:1.2.0"
+    implementation "com.google.android.gms:play-services-wearable:20.0.1"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1"
+}

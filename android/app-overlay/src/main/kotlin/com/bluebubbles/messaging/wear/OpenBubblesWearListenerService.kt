@@ -1,0 +1,41 @@
+package com.bluebubbles.messaging.wear
+
+import com.bluebubbles.messaging.wear.protocol.WearAckDto
+import com.bluebubbles.messaging.wear.protocol.WearAckStatus
+import com.bluebubbles.messaging.wear.protocol.WearCodec
+import com.bluebubbles.messaging.wear.protocol.WearProtocol
+import com.google.android.gms.wearable.MessageEvent
+import com.google.android.gms.wearable.WearableListenerService
+
+class OpenBubblesWearListenerService : WearableListenerService() {
+    override fun onMessageReceived(event: MessageEvent) {
+        if (event.path != WearProtocol.PATH_COMMAND) return
+
+        val json = event.data.toString(Charsets.UTF_8)
+        val command = runCatching { WearCodec.commandFromJson(json) }.getOrNull()
+        if (command == null) {
+            WearPlatformBridge.sendAck(
+                this,
+                event.sourceNodeId,
+                WearAckDto(status = WearAckStatus.FAILED, errorCode = "BAD_COMMAND", errorMessage = "Malformed command"),
+            )
+            return
+        }
+        if (command.protocolVersion != WearProtocol.VERSION || command.commandId.isNullOrBlank()) {
+            WearPlatformBridge.sendAck(
+                this,
+                event.sourceNodeId,
+                WearAckDto(
+                    commandId = command.commandId,
+                    status = WearAckStatus.FAILED,
+                    errorCode = "PROTOCOL",
+                    errorMessage = "Unsupported protocol or missing commandId",
+                ),
+            )
+            return
+        }
+
+        val ack = WearPlatformBridge.receiveCommand(applicationContext, json, event.sourceNodeId)
+        WearPlatformBridge.sendAck(this, event.sourceNodeId, ack)
+    }
+}
