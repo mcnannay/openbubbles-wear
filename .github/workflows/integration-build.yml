@@ -96,24 +96,24 @@ jobs:
         working-directory: openbubbles
         run: flutter pub get
 
-      - name: Build phone APK
-        working-directory: openbubbles
-        run: flutter build apk --flavor alpha --debug --target-platform android-arm64
-
       - name: Build Wear APK
         working-directory: openbubbles/android
         run: ./gradlew :wear:assembleAlphaDebug --stacktrace
 
-      - name: Upload phone APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: openbubbles-alpha-debug
-          path: openbubbles/build/app/outputs/flutter-apk/app-alpha-debug.apk
-          if-no-files-found: error
+      - name: Build phone APK
+        working-directory: openbubbles
+        run: flutter build apk --flavor alpha --debug --target-platform android-arm64
 
       - name: Upload Wear APK
         uses: actions/upload-artifact@v4
         with:
           name: openbubbles-wear-alpha-debug
           path: openbubbles/build/wear/outputs/apk/alpha/debug/wear-alpha-debug.apk
+          if-no-files-found: error
+
+      - name: Upload phone APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: openbubbles-alpha-debug
+          path: openbubbles/build/app/outputs/flutter-apk/app-alpha-debug.apk
           if-no-files-found: error
