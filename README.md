@@ -36,7 +36,9 @@ Implemented:
 
 ## Step 5 — integration/build gate
 
-GitHub Actions now checks out the current upstream `rustpush` branch, applies the integration, resolves Flutter dependencies, analyzes the Wear Dart bridge, and compiles the Wear and phone variants with the upstream toolchain. Build logs are uploaded on failure so compiler issues can be fixed from concrete diagnostics.
+GitHub Actions checks out the current upstream `rustpush` branch, applies the integration, resolves Flutter dependencies, analyzes the Wear Dart bridge, and compiles the Wear and phone variants with the upstream toolchain. Build logs are uploaded on failure so compiler issues can be fixed from concrete diagnostics.
+
+Successful runs publish matching phone/Wear APK artifacts plus a build manifest containing the companion commit, upstream OpenBubbles commit, and SHA-256 hashes for both APKs.
 
 ## Step 6 — deliberately narrow MVP
 
@@ -52,6 +54,14 @@ The first Wear UI is intentionally limited to the messaging features that matter
 - actual conversation/contact avatar transfer through Wear Data Layer Assets, with initials fallback;
 - bounded offline inbox/thread/avatar/outbox caches.
 
+Step 6 also includes a runtime-validation layer:
+
+- privacy-safe `OBWearPhone` and `OBWearWatch` log tags for Data Layer commands, ACKs, connection state, snapshot counts, and transport failures;
+- `tools/device_smoke_test.sh` for paired phone/watch ADB validation without uninstalling or clearing app data;
+- a hardware validation matrix covering Data Layer transport, rendering, replies, retry/deduplication, background execution, and offline caches.
+
+See `DEVICE_TESTING.md` for the current paired-device test procedure.
+
 Images/GIF rendering, new-conversation composition, sending tapbacks, audio messages, stickers, edit/unsend controls, and location cards remain deferred by design.
 
 ## Apply to an upstream checkout
@@ -64,4 +74,4 @@ python tools/apply_to_openbubbles.py /path/to/openbubbles-app
 
 Then build matching phone/watch variants from upstream `android/` using the same flavor on both devices. For example, the CI development build uses `AlphaDebug`.
 
-See `INTEGRATION.md` for integration details and `PROTOCOL.md` for the wire contract.
+See `INTEGRATION.md` for integration details, `PROTOCOL.md` for the wire contract, and `DEVICE_TESTING.md` for hardware validation.
