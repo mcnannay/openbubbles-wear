@@ -101,6 +101,10 @@ jobs:
         working-directory: openbubbles
         run: flutter pub get
 
+      - name: Analyze Wear Dart bridge
+        working-directory: openbubbles
+        run: flutter analyze --no-pub lib/services/wear
+
       - name: Configure Flutter SDK for Gradle
         shell: bash
         run: |
