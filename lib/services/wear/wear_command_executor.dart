@@ -71,6 +71,9 @@ class WearCommandExecutor {
   Future<void> _refreshChangedSnapshots() async {
     try {
       _refreshTick++;
+      // Thread updates stay responsive while the watch is in a conversation; the more
+      // expensive 30-chat inbox scan runs every third tick (~15 seconds). Explicit
+      // requestInbox/requestThread commands still publish immediately.
       if (_refreshTick % 3 == 0) await _publishInbox();
       for (final guid in _watchedChats.toList()) {
         final chat = Chat.findOne(guid: guid);
@@ -110,6 +113,8 @@ class WearCommandExecutor {
   }
 
   void _watchChat(String guid) {
+    // Dart's default Set preserves insertion order. Re-adding moves the most recently
+    // used chat to the back and bounds fallback polling to avoid an ever-growing cost.
     _watchedChats.remove(guid);
     _watchedChats.add(guid);
     while (_watchedChats.length > _maxWatchedChats) {
@@ -132,12 +137,18 @@ class WearCommandExecutor {
     final text = command.text?.trim() ?? '';
     if (text.isEmpty) return const WearCommandResult.failed('EMPTY_TEXT', 'Message is empty');
 
+    // A command UUID is also stored on the OpenBubbles temp message. If Flutter/Android
+    // restarts after the backend accepted a send but before the terminal ACK reached the
+    // watch, the durable command journal can re-enter here and recognize the existing send.
     final recent = await Chat.getMessagesAsync(chat, limit: 50);
     final existingForCommand = recent
         .where((candidate) => candidate.metadata?[_commandMetadataKey] == command.commandId)
         .toList();
 
     if (existingForCommand.isNotEmpty) {
+      // prepMessage can split a legacy URL into more than one DB message. Treat all rows
+      // carrying this UUID as one logical watch command so a restart cannot create a
+      // second copy of a part that already made it to the backend.
       final failed = existingForCommand.where((message) {
         final guid = message.guid ?? '';
         return message.error != 0 || guid.startsWith('error');
@@ -160,6 +171,8 @@ class WearCommandExecutor {
         return WearCommandResult.succeeded(messageId: guid.isEmpty ? null : guid);
       }
 
+      // Stale executing command after a process restart: reuse only the remaining temp
+      // rows instead of creating another optimistic DB row.
       try {
         for (final message in pending) {
           await ah.sendMessage(chat, message, null, null);
@@ -193,6 +206,7 @@ class WearCommandExecutor {
       return const WearCommandResult.failed('PREPARE_FAILED', 'OpenBubbles rejected the outgoing message');
     }
 
+    // prepMessage can split legacy URL messages. Preserve the command marker on every part.
     for (final message in prepared) {
       message.metadata = <String, dynamic>{
         ...?message.metadata,
@@ -261,6 +275,8 @@ class WearCommandExecutor {
       return const WearCommandResult.failed('CHAT_MISMATCH', 'Reaction target does not belong to the requested chat');
     }
 
+    // Reactions are messages too. Load their associated rows and apply the same UUID
+    // recovery rule used for text sends before creating a new tapback.
     selected.fetchAssociatedMessages();
     final existingReaction = selected.associatedMessages
         .where((candidate) => candidate.metadata?[_commandMetadataKey] == command.commandId)

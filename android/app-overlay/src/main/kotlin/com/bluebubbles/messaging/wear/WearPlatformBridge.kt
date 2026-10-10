@@ -38,6 +38,9 @@ object WearPlatformBridge {
     @Volatile private var dartReady = false
 
     fun attach(context: Context, engine: FlutterEngine) {
+        // A newly attached engine is not ready until Dart installs its MethodChannel
+        // handler and explicitly calls startBridge. Carrying dartReady across engines can
+        // otherwise drop a command into an engine whose Dart side has not started yet.
         synchronized(lock) { dartReady = false }
         attachedEngine = engine
         engine.addEngineLifecycleListener(object : FlutterEngine.EngineLifecycleListener {
@@ -105,6 +108,10 @@ object WearPlatformBridge {
         }
     }
 
+    /**
+     * Persist and (if Flutter is ready) dispatch a command.
+     * Returns the immediate ACK to send to the watch.
+     */
     fun receiveCommand(context: Context, json: String, sourceNodeId: String): WearAckDto {
         val command = runCatching { WearCodec.commandFromJson(json) }.getOrNull()
             ?: return WearAckDto(status = WearAckStatus.FAILED, errorCode = "BAD_COMMAND", errorMessage = "Malformed command JSON")
@@ -127,6 +134,9 @@ object WearPlatformBridge {
             val pending = readArray(context, PENDING)
             val existingIndex = findPendingIndex(pending, commandId)
             if (existingIndex >= 0) {
+                // Already queued/executing. Do not dispatch it twice. If there is no
+                // live Dart bridge, however, a repeat delivery is a useful chance to
+                // wake the existing OpenBubbles background worker again.
                 val entry = pending.getJSONObject(existingIndex)
                 entry.put("sourceNodeId", sourceNodeId)
                 writeArray(context, PENDING, pending)
@@ -151,6 +161,8 @@ object WearPlatformBridge {
         }
 
         if (needsBackgroundWake) {
+            // Reuse OpenBubbles' existing expedited DartWorker. The worker engine is wired
+            // to this bridge by the small upstream hook documented in INTEGRATION.md.
             DartWorkManager.createWorker(
                 context.applicationContext,
                 "wear-wake",
@@ -203,6 +215,7 @@ object WearPlatformBridge {
         ).addOnCompleteListener { result.success(it.isSuccessful) }
     }
 
+    /** Called once Dart installs its handler. Returns only commands safe to dispatch now. */
     private fun commandsReadyForDispatch(context: Context): List<String> {
         val pending = readArray(context, PENDING)
         val now = System.currentTimeMillis()
@@ -274,6 +287,7 @@ object WearPlatformBridge {
     }
 
     private fun writeArray(context: Context, key: String, value: JSONArray) {
+        // commit() is intentional: command journaling must reach disk before ACKing receipt.
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(key, value.toString()).commit()
     }
 
