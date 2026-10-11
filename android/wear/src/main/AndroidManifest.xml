@@ -22,5 +22,32 @@
                 <data android:scheme="wear" android:host="*" android:pathPrefix="/openbubbles/v1/" />
             </intent-filter>
         </service>
+        <service
+            android:name=".OpenBubblesTileService"
+            android:exported="true"
+            android:label="OpenBubbles Inbox"
+            android:description="Recent OpenBubbles conversations and unread status"
+            android:icon="@drawable/ic_openbubbles_complication"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".OpenBubblesUnreadComplicationService"
+            android:exported="true"
+            android:label="OpenBubbles Unread"
+            android:icon="@drawable/ic_openbubbles_complication"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="300" />
+        </service>
     </application>
 </manifest>
