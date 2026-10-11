@@ -61,6 +61,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         bridge = WearBridge(this)
+        applyLaunchIntent(intent)
         setContent {
             MaterialTheme {
                 BackHandler(enabled = selectedChatId != null) { selectedChatId = null }
@@ -84,6 +85,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        applyLaunchIntent(intent)
+    }
+
     override fun onResume() {
         super.onResume()
         if (::bridge.isInitialized) {
@@ -104,6 +111,12 @@ class MainActivity : ComponentActivity() {
         val chatId = replyChatId
         replyChatId = null
         if (chatId != null && text.isNotBlank()) bridge.sendText(chatId, text)
+    }
+
+    private fun applyLaunchIntent(intent: Intent?) {
+        // No chat extra intentionally means "show inbox". This makes Tile/complication taps
+        // deterministic even if an existing singleTop activity was displaying a thread.
+        selectedChatId = intent?.getStringExtra(EXTRA_CHAT_ID)?.takeIf { it.isNotBlank() }
     }
 
     private fun openReplyInput(chatId: String) {
@@ -132,6 +145,7 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        const val EXTRA_CHAT_ID = "openbubbles_wear_chat_id"
         private const val REQUEST_REPLY = 1001
         private const val KEY_REPLY = "openbubbles_reply"
     }
@@ -159,13 +173,7 @@ private fun InboxScreen(
             item {
                 Column(Modifier.fillMaxWidth()) {
                     Text("OpenBubbles", fontWeight = FontWeight.Bold)
-                    Text(
-                        when {
-                            phoneState.backendReady -> "Phone connected"
-                            connected -> "Phone connected · bridge starting"
-                            else -> "Phone unavailable · cached chats"
-                        }
-                    )
+                    Text(connectionLabel(connected, phoneState.backendReady, inbox.generatedAtMs, inbox.chats.isNotEmpty()))
                 }
             }
             if (inbox.chats.isEmpty()) {
@@ -276,7 +284,11 @@ private fun ThreadScreen(
                                     overflow = TextOverflow.Ellipsis,
                                     fontWeight = FontWeight.Bold,
                                 )
-                                Text(if (connected) "Connected" else "Offline · replies will retry")
+                                val generatedAt = thread?.generatedAtMs ?: WearStore.inbox.value.generatedAtMs
+                                Text(
+                                    if (connected) "Connected · synced ${cacheAge(generatedAt)}"
+                                    else "Offline · cached ${cacheAge(generatedAt)}"
+                                )
                             }
                         }
                     },
@@ -300,10 +312,22 @@ private fun ThreadScreen(
                 )
             }
             item {
+                Text("Quick reply", fontWeight = FontWeight.Bold)
+            }
+            QUICK_REPLIES.forEach { reply ->
+                item {
+                    Button(
+                        onClick = { bridge.sendText(chatId, reply) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text(reply) },
+                    )
+                }
+            }
+            item {
                 Button(
                     onClick = onReply,
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Reply") },
+                    label = { Text("Type or dictate…") },
                 )
             }
             item {
@@ -430,6 +454,28 @@ private fun avatarInitials(chat: WearChatDto?): String {
         ?: "?"
 }
 
+private fun connectionLabel(
+    connected: Boolean,
+    backendReady: Boolean,
+    generatedAtMs: Long,
+    hasCache: Boolean,
+): String = when {
+    connected && backendReady -> "Connected · synced ${cacheAge(generatedAtMs)}"
+    connected -> "Connected · bridge starting"
+    hasCache -> "Offline · cached ${cacheAge(generatedAtMs)}"
+    else -> "Phone unavailable · no cache"
+}
+
+private fun cacheAge(timestampMs: Long): String {
+    val ageMs = (System.currentTimeMillis() - timestampMs).coerceAtLeast(0L)
+    return when {
+        ageMs < 60_000L -> "just now"
+        ageMs < 3_600_000L -> "${ageMs / 60_000L}m ago"
+        ageMs < 86_400_000L -> "${ageMs / 3_600_000L}h ago"
+        else -> "${ageMs / 86_400_000L}d ago"
+    }
+}
+
 private fun statusLabel(status: String?): String? = when (status) {
     "pending" -> "Sending…"
     "sent" -> "Sent"
@@ -454,3 +500,5 @@ private fun reactionLabel(reaction: WearReactionDto): String {
 
 private fun formatTimestamp(timestampMs: Long): String =
     DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(timestampMs))
+
+private val QUICK_REPLIES = listOf("Yes", "No", "On my way")
