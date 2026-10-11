@@ -27,7 +27,6 @@
             android:name=".OpenBubblesTileService"
             android:exported="true"
             android:label="OpenBubbles Inbox"
-            android:description="Recent OpenBubbles conversations and unread status"
             android:icon="@drawable/ic_openbubbles_complication"
             android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
             <intent-filter>
