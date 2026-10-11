@@ -70,6 +70,14 @@ dependencies {
     implementation "androidx.wear.compose:compose-material3:1.5.6"
     implementation "androidx.wear.compose:compose-foundation:1.5.6"
     implementation "androidx.wear:wear-input:1.2.0"
+
+    // Step 10 watch-specific surfaces. These lines support compileSdk 36 while using
+    // the coroutine-friendly Material3 Tile service and current complication data source API.
+    implementation "androidx.wear.tiles:tiles:1.6.2"
+    implementation "androidx.wear.protolayout:protolayout:1.4.2"
+    implementation "androidx.wear.protolayout:protolayout-material3:1.4.2"
+    implementation "androidx.wear.watchface:watchface-complications-data-source-ktx:1.2.1"
+
     implementation "com.google.android.gms:play-services-wearable:20.0.1"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1"
 }
