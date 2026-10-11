@@ -31,6 +31,8 @@ class WearDataService : WearableListenerService() {
                     val inbox = runCatching { WearCodec.inboxFromJson(json) }.getOrNull() ?: return@forEach
                     Log.d(TAG, "inbox snapshot chats=${inbox.chats.size}")
                     WearStore.setInbox(inbox)
+                    OpenBubblesTileService.requestUpdate(applicationContext)
+                    OpenBubblesUnreadComplicationService.requestUpdate(applicationContext)
                     for (chat in inbox.chats) {
                         val chatId = chat.id ?: continue
                         loadAvatar(chatId, dataMap.getAsset(WearProtocol.avatarAssetKey(chatId)))
