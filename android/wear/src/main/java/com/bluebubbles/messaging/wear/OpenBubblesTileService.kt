@@ -20,6 +20,7 @@ import androidx.wear.tiles.RequestBuilders.TileRequest
 import androidx.wear.tiles.TileBuilders.Tile
 import androidx.wear.tiles.TileService
 import androidx.wear.tiles.tile
+import com.bluebubbles.messaging.wear.protocol.WearChatDto
 
 /**
  * A deliberately small messaging Tile backed only by the watch cache.
@@ -41,7 +42,7 @@ class OpenBubblesTileService : Material3TileService() {
     }
 
     private fun MaterialScope.tileLayout(
-        chats: List<com.bluebubbles.messaging.wear.protocol.WearChatDto>,
+        chats: List<WearChatDto>,
         unread: Int,
     ): LayoutElement {
         val rows = chats.map { chat ->
@@ -83,7 +84,7 @@ class OpenBubblesTileService : Material3TileService() {
     }
 
     private fun mainActivityAction(chatId: String? = null): ActionBuilders.LaunchAction {
-        val extras = if (chatId.isNullOrBlank()) {
+        val extras: Map<String, ActionBuilders.AndroidExtra> = if (chatId.isNullOrBlank()) {
             emptyMap()
         } else {
             mapOf(MainActivity.EXTRA_CHAT_ID to ActionBuilders.stringExtra(chatId))
