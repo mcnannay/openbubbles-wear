@@ -15,7 +15,7 @@ import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUp
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
 
-/** Short-text complication showing total unread conversations/messages represented by the cache. */
+/** Short-text complication showing the number of cached conversations marked unread. */
 class OpenBubblesUnreadComplicationService : SuspendingComplicationDataSourceService() {
     override fun onCreate() {
         super.onCreate()
@@ -41,9 +41,9 @@ class OpenBubblesUnreadComplicationService : SuspendingComplicationDataSourceSer
             else -> unread.toString()
         }
         val description = when (unread) {
-            0 -> "OpenBubbles, no unread messages"
-            1 -> "OpenBubbles, 1 unread message"
-            else -> "OpenBubbles, $unread unread messages"
+            0 -> "OpenBubbles, no unread conversations"
+            1 -> "OpenBubbles, 1 unread conversation"
+            else -> "OpenBubbles, $unread unread conversations"
         }
         return ShortTextComplicationData.Builder(
             text = PlainComplicationText.Builder(display).build(),
