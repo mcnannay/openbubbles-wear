@@ -2,7 +2,7 @@ name: Integration Build
 
 on:
   push:
-    branches: [ main, steps-10-11-surfaces-hardening ]
+    branches: [ main ]
     paths:
       - '.github/workflows/integration-build.yml'
       - 'android/**'
