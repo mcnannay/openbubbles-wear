@@ -173,7 +173,15 @@ private fun InboxScreen(
             item {
                 Column(Modifier.fillMaxWidth()) {
                     Text("OpenBubbles", fontWeight = FontWeight.Bold)
-                    Text(connectionLabel(connected, phoneState.backendReady, inbox.generatedAtMs, inbox.chats.isNotEmpty()))
+                    Text(
+                        connectionLabel(
+                            connected = connected,
+                            bridgeReady = phoneState.bridgeReady,
+                            backendReady = phoneState.backendReady,
+                            generatedAtMs = inbox.generatedAtMs,
+                            hasCache = inbox.chats.isNotEmpty(),
+                        )
+                    )
                 }
             }
             if (inbox.chats.isEmpty()) {
@@ -249,6 +257,7 @@ private fun ThreadScreen(
     val outbox by WearStore.outbox.collectAsState()
     val avatars by WearStore.avatars.collectAsState()
     val connected by WearStore.phoneConnected.collectAsState()
+    val phoneState by WearStore.state.collectAsState()
     val thread = threads[chatId]
     val chat = thread?.chat ?: WearStore.inbox.value.chats.firstOrNull { it.id == chatId }
     val messages = WearStore.displayMessages(chatId)
@@ -286,8 +295,13 @@ private fun ThreadScreen(
                                 )
                                 val generatedAt = thread?.generatedAtMs ?: WearStore.inbox.value.generatedAtMs
                                 Text(
-                                    if (connected) "Connected · synced ${cacheAge(generatedAt)}"
-                                    else "Offline · cached ${cacheAge(generatedAt)}"
+                                    connectionLabel(
+                                        connected = connected,
+                                        bridgeReady = phoneState.bridgeReady,
+                                        backendReady = phoneState.backendReady,
+                                        generatedAtMs = generatedAt,
+                                        hasCache = messages.isNotEmpty(),
+                                    )
                                 )
                             }
                         }
@@ -353,14 +367,14 @@ private fun MessageBubble(
     } else {
         MaterialTheme.colorScheme.secondaryContainer
     }
-    val body = listOfNotNull(
-        message.subject?.takeIf { it.isNotBlank() },
-        message.text?.takeIf { it.isNotBlank() },
-    ).joinToString("\n").ifBlank {
-        when {
-            message.isDeleted -> "Unsent message"
-            message.attachments.isNotEmpty() -> "Attachment"
-            else -> "Message"
+    val body = if (message.isDeleted) {
+        "Unsent message"
+    } else {
+        listOfNotNull(
+            message.subject?.takeIf { it.isNotBlank() },
+            message.text?.takeIf { it.isNotBlank() },
+        ).joinToString("\n").ifBlank {
+            if (message.attachments.isNotEmpty()) "Attachment" else "Message"
         }
     }
 
@@ -386,6 +400,7 @@ private fun MessageBubble(
             val status = if (message.isFromMe) statusLabel(message.status) else null
             val footer = listOfNotNull(
                 timestamp?.let(::formatTimestamp),
+                "Edited".takeIf { message.editedAtMs != null && !message.isDeleted },
                 status,
             ).joinToString(" · ")
             if (footer.isNotBlank()) Text(footer)
@@ -456,11 +471,13 @@ private fun avatarInitials(chat: WearChatDto?): String {
 
 private fun connectionLabel(
     connected: Boolean,
+    bridgeReady: Boolean,
     backendReady: Boolean,
     generatedAtMs: Long,
     hasCache: Boolean,
 ): String = when {
     connected && backendReady -> "Connected · synced ${cacheAge(generatedAtMs)}"
+    connected && bridgeReady -> "Connected · phone backend unavailable"
     connected -> "Connected · bridge starting"
     hasCache -> "Offline · cached ${cacheAge(generatedAtMs)}"
     else -> "Phone unavailable · no cache"
