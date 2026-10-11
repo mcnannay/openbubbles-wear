@@ -30,6 +30,10 @@ jobs:
         with:
           path: wear-companion
 
+      - name: Validate resilience test shell
+        shell: bash
+        run: bash -n wear-companion/tools/device_resilience_test.sh
+
       - name: Check out upstream OpenBubbles
         uses: actions/checkout@v4
         with:
