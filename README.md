@@ -62,7 +62,38 @@ Step 6 also includes a runtime-validation layer:
 
 See `DEVICE_TESTING.md` for the current paired-device test procedure.
 
-Images/GIF rendering, new-conversation composition, sending tapbacks, audio messages, stickers, edit/unsend controls, and location cards remain deferred by design.
+## Steps 7–9 — already absorbed into the MVP
+
+The original plan's cache/offline work (Step 7) and durable reply/outbox/dedup work (Step 8) were implemented as part of Step 4 rather than duplicated later. Step 9's MVP notification strategy is also already in place: normal Android notification mirroring is used so the watch companion does not generate duplicate native Wear notifications.
+
+## Step 10 — Tile, complication, and quick replies
+
+Implemented:
+
+- a cache-backed Wear OS inbox Tile showing unread state and the two newest conversations;
+- direct Tile deep links into individual conversations;
+- an Inbox edge action;
+- a short-text unread complication (`0`–`99+`) that opens the inbox;
+- immediate Tile/complication refresh requests when a new inbox snapshot arrives;
+- one-tap `Yes`, `No`, and `On my way` replies that reuse the existing durable send/outbox path.
+
+The Tile deliberately reads the bounded local cache instead of waiting for the phone, so it remains useful when the phone is temporarily unavailable.
+
+## Step 11 — failure-mode hardening
+
+Implemented:
+
+- connection labels now distinguish genuinely connected state from cached/offline state and show snapshot age;
+- reachable-phone/backend-unavailable state is distinct from a working backend;
+- edited messages show an `Edited` marker;
+- unsent/deleted messages suppress stale body text and display `Unsent message`;
+- a debug-only, read-only `requestInbox` injection receiver for deterministic duplicate/background/Doze testing;
+- `tools/device_resilience_test.sh` covering baseline transport, phone process background wake, same-UUID deduplication, rapid read-only commands, and optional forced Doze;
+- a manual failure matrix for radio disconnect/reconnect, reboot, group bursts, attachments, edits/unsends, and backend-unavailable behavior.
+
+See `STEPS_10_11.md` for the exact runtime validation procedure.
+
+Images/GIF binary rendering, new-conversation composition, sending tapbacks, audio messages, stickers, edit/unsend controls, and location cards remain deferred by design.
 
 ## Apply to an upstream checkout
 
@@ -74,4 +105,4 @@ python tools/apply_to_openbubbles.py /path/to/openbubbles-app
 
 Then build matching phone/watch variants from upstream `android/` using the same flavor on both devices. For example, the CI development build uses `AlphaDebug`.
 
-See `INTEGRATION.md` for integration details, `PROTOCOL.md` for the wire contract, and `DEVICE_TESTING.md` for hardware validation.
+See `INTEGRATION.md` for integration details, `PROTOCOL.md` for the wire contract, `DEVICE_TESTING.md` for the base hardware test, and `STEPS_10_11.md` for Tile/complication and resilience validation.
